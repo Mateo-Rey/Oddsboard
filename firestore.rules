@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+
+    // ---------- users ----------
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isOwner(userId) && request.resource.data.balance == 1000;
+      // Balance is only touched by the bet / payout transactions in the client.
+      // Rules keep it sane (never negative, no giant jumps from a single write).
+      // For fully tamper-proof balances, move these to Cloud Functions (see README).
+      allow update: if isOwner(userId)
+                    && request.resource.data.balance >= 0
+                    && request.resource.data.balance <= resource.data.balance + 1000000;
+      allow delete: if false;
+    }
+
+    // ---------- markets ----------
+    match /markets/{marketId} {
+      allow read: if true;
+      allow create: if isSignedIn()
+                    && request.resource.data.creatorId == request.auth.uid
+                    && request.resource.data.status == "open"
+                    && request.resource.data.outcomes.size() >= 2
+                    && request.resource.data.outcomes.size() <= 8;
+
+      // Creator can close/resolve. Anyone signed in may change ONLY `pool` (placing a bet)
+      // while the market is open. Question/outcomes/creator are immutable.
+      allow update: if isSignedIn()
+                    && resource.data.status != "resolved"
+                    && request.resource.data.question == resource.data.question
+                    && request.resource.data.outcomes == resource.data.outcomes
+                    && request.resource.data.creatorId == resource.data.creatorId
+                    && (
+                      resource.data.creatorId == request.auth.uid
+                      || (resource.data.status == "open"
+                          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pool']))
+                    );
+      allow delete: if false;
+
+      match /positions/{positionId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn()
+                      && request.resource.data.userId == request.auth.uid
+                      && request.resource.data.amountWagered > 0
+                      && request.resource.data.payoutClaimed == false
+                      && get(/databases/$(database)/documents/markets/$(marketId)).data.status == "open";
+        // Owner may only flip payoutClaimed false -> true, and only once the market is resolved.
+        allow update: if isSignedIn()
+                      && resource.data.userId == request.auth.uid
+                      && resource.data.payoutClaimed == false
+                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['payoutClaimed'])
+                      && request.resource.data.payoutClaimed == true
+                      && get(/databases/$(database)/documents/markets/$(marketId)).data.status == "resolved";
+        allow delete: if false;
+      }
+
+      match /priceHistory/{entryId} {
+        allow read: if true;
+        allow create: if isSignedIn();
+        allow update, delete: if false;
+      }
+    }
+
+    // Lets the portfolio query all of a user's positions across markets.
+    match /{path=**}/positions/{positionId} {
+      allow read: if isSignedIn();
+    }
+  }
+}
