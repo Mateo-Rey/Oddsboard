@@ -55,4 +55,4 @@ firestore.rules             security rules
 
 ## Demo Video
 
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/jx3qYHbNQSI/0.jpg)](https://www.youtube.com/watch?v=jx3qYHbNQSI)
+[![YOUTUBE VIDEO](https://img.youtube.com/vi/jx3qYHbNQSI/0.jpg)](https://www.youtube.com/watch?v=jx3qYHbNQSI)
